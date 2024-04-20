@@ -71,12 +71,12 @@ func runClient(cfg *client.Config, args []string) (err error) {
 
 	args = fs.Args()
 	if len(args) > 0 {
-		cfg.Services = nil
+		cfg.Routes = nil
 		for _, arg := range args {
 			if m := configRe.FindStringSubmatch(arg); len(m) == 0 {
 				return fmt.Errorf("bad argument format")
 			} else {
-				cfg.Services = append(cfg.Services, client.ServiceConfig{
+				cfg.Routes = append(cfg.Routes, client.RouteConfig{
 					Name:      m[1],
 					LocalAddr: m[2],
 				})

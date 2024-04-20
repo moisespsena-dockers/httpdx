@@ -58,7 +58,7 @@ func Run(cfg *Config) (err error) {
 		doneCount int
 	)
 
-	for i, service := range cfg.Services {
+	for i, service := range cfg.Routes {
 		if l := runService(func() {
 			done <- i + 1
 		}, i, serverURL, service.Name, service.LocalAddr); l != nil {

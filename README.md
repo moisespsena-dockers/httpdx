@@ -8,7 +8,7 @@ HTTP server with TCP proxies
 ```
 client:
   server_url: "ws://localhost:7000"
-  services:
+  routes:
     - name: ssh
       local_addr: :25000
       
