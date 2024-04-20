@@ -14,10 +14,19 @@ client:
       
 server:
   addr: ":7000"
+  
+  # not found page on handles not found.
+  # If set, overrides default not found handler message.
+  not_found: ""
+  
+  # if is true, disables not found handles
+  not_found_disabled: false
+  
   routes:
     http:
       /:
         addr: 127.0.0.1:80
+        disabled: false
         
       # proxify /my-dir as / to destination and pass '/my-dir' 
       # into request header 'path_header' (default value is 'X-Forwarded-Prefix')
@@ -25,9 +34,12 @@ server:
         addr: 127.0.0.1:80
         dir: true
         path_header: X-Forwarded-Prefix
+        disabled: false
 
     tcp_sockets:
-      ssh: localhost:22
+      ssh: 
+        addr: localhost:22
+        disabled: false
 ```
 
 ## Server

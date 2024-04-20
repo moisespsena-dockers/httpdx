@@ -16,7 +16,7 @@ const BufferSize = 256 * 1024
 
 // Handler handlers
 type Handler struct {
-	handlers          map[string]string
+	handlers          map[string]*TCPSocketConfig
 	upgrader          websocket.Upgrader
 	dialTimeout       time.Duration
 	writeTimeout      time.Duration
@@ -25,7 +25,7 @@ type Handler struct {
 
 // New new handler
 func New(
-	handlers map[string]string,
+	handlers map[string]*TCPSocketConfig,
 	handshakeTimeout time.Duration,
 	dialTimeout time.Duration,
 	writeTimeout time.Duration,
@@ -66,12 +66,12 @@ func (h *Handler) Proxy() func(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		addr := h.handlers[name]
-		if addr == "" {
+		sck := h.handlers[name]
+		if sck.Addr == "" {
 			http.Error(w, fmt.Sprintf("%q is not registered"), http.StatusPreconditionFailed)
 		}
 
-		s, err := net.DialTimeout("tcp", addr, h.dialTimeout)
+		s, err := net.DialTimeout("tcp", sck.Addr, h.dialTimeout)
 
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Could not connect upstream: %v", err), 500)

@@ -7,6 +7,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"path"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -15,38 +16,50 @@ import (
 )
 
 func Serve(cfg *Config) (err error) {
-	proxyHandler := New(
-		cfg.Routes.TCPSockets,
-		5*time.Second,
-		5*time.Second,
-		5*time.Second,
-		false,
+	var (
+		proxyHandler = New(
+			cfg.Routes.TCPSockets,
+			5*time.Second,
+			5*time.Second,
+			5*time.Second,
+			false,
+		)
+		proxies     []string
+		rootHandler http.Handler
 	)
 
 	http.Handle(internal.ProxyPath, http.HandlerFunc(proxyHandler.Proxy()))
 
-	var (
-		proxies []string
-	)
-
 	for pth, cfg := range cfg.Routes.Http {
+		if cfg.Disabled {
+			continue
+		}
+
 		var proxy http.Handler
 
 		if cfg.Dir {
 			pth = strings.TrimRight(pth, "/") + "/"
 		}
 
-		proxy, err = createReverseProxy(pth, &cfg)
+		proxy, err = createReverseProxy(pth, cfg)
 		if err != nil {
 			return fmt.Errorf("create reverse proxy failed: %s", err)
 		}
-		http.Handle(pth, proxy)
+
+		if pth == "/" {
+			rootHandler = proxy
+		} else {
+			http.Handle(pth, proxy)
+		}
 
 		proxies = append(proxies, fmt.Sprintf("HTTP %q 🡒 %s", pth, cfg.ToString(pth)))
 	}
 
-	for pth, addr := range cfg.Routes.TCPSockets {
-		proxies = append(proxies, fmt.Sprintf("TCP %q 🡒 %q", pth, addr))
+	for pth, sck := range cfg.Routes.TCPSockets {
+		if sck.Disabled {
+			continue
+		}
+		proxies = append(proxies, fmt.Sprintf("TCP %q 🡒 %s", pth, sck))
 	}
 
 	sort.Strings(proxies)
@@ -57,7 +70,55 @@ func Serve(cfg *Config) (err error) {
 		log.Printf("Starting reverse proxy server on port %s without targets", cfg.Addr)
 	}
 
+	if !cfg.NotFoundDisabled {
+		fallback := func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/html")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.WriteHeader(http.StatusNotFound)
+			fmt.Fprintf(w, fallbackPage, r.URL.Path)
+		}
+
+		if cfg.NotFound != "" {
+			fallback = func(w http.ResponseWriter, r *http.Request) {
+				http.ServeFile(w, r, cfg.NotFound)
+			}
+		}
+
+		var (
+			handlers       Handlers
+			hasRootHandler = rootHandler != nil
+		)
+
+		if hasRootHandler {
+			handlers = append(handlers, rootHandler)
+		}
+
+		handlers = append(handlers, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("X-Httpdx-Handle-Fallback") != "false" {
+				fallback(w, r)
+			}
+		}))
+
+		rootHandler = handlers
+	}
+
+	if rootHandler != nil {
+		http.Handle("/", rootHandler)
+	}
+
 	return http.ListenAndServe(cfg.Addr, nil)
+}
+
+type Handlers []http.Handler
+
+func (h Handlers) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	f := reflect.ValueOf(w).Elem().FieldByName("wroteHeader")
+	for _, h := range h {
+		if f.Bool() {
+			return
+		}
+		h.ServeHTTP(w, r)
+	}
 }
 
 func createReverseProxy(pth string, cfg *HttpConfig) (http.Handler, error) {
@@ -96,3 +157,35 @@ func createReverseProxy(pth string, cfg *HttpConfig) (http.Handler, error) {
 	}
 	return rv, nil
 }
+
+const fallbackPage = `<!DOCTYPE html>
+<html>
+<head>
+<title>Welcome to HTTPDx!</title>
+<style>
+    body {
+        width: 35em;
+        margin: 0 auto;
+        font-family: Tahoma, Verdana, Arial, sans-serif;
+    }
+
+	code {
+		background-color: #f7dfdf;
+		padding: 3px;
+		border: 1px solid #f9b9b9;
+	}
+</style>
+</head>
+<body>
+<h1>Welcome to HTTPDx!</h1>
+<p>If you see this page, the HTTPDx web server is successfully installed and
+working. Further configuration is required.</p>
+
+<p>For online documentation and support please refer to
+<a href="https://github.com/moisespsena-go/httpdx">HTTPDx</a>.<br/>
+
+<p style="color:red">Warning: The requested page <code>%s</code> is unhandled.</strong></p>
+
+<p><em>Thank you for using HTTPDx.</em></p>
+</body>
+</html>`

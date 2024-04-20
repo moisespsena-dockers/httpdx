@@ -58,9 +58,7 @@ type Config struct {
 var configRe = regexp.MustCompile(`^(.+)@(.*:\d+)$`)
 
 func runClient(cfg *client.Config, args []string) (err error) {
-	var (
-		fs = flag.NewFlagSet("client", flag.ContinueOnError)
-	)
+	var fs = flag.NewFlagSet("client", flag.ContinueOnError)
 
 	fs.StringVar(&cfg.ServerURL, "server-url", cfg.ServerURL, "The httpdx server url")
 
