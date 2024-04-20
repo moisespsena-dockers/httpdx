@@ -15,9 +15,9 @@ client:
 server:
   addr: ":7000"
   
-  # not found page on handles not found.
-  # If set, overrides default not found handler message.
-  not_found: ""
+  # not found HTML file to handles not found error.
+  # If not set, uses default not found handler message.
+  not_found: "my_not_found.html"
   
   # if is true, disables not found handles
   not_found_disabled: false
