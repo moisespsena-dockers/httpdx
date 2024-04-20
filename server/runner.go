@@ -16,13 +16,15 @@ import (
 )
 
 func Serve(cfg *Config) (err error) {
+	cfg.TCPSockets.Defaults()
+
 	var (
 		proxyHandler = New(
-			cfg.Routes.TCPSockets,
-			5*time.Second,
-			5*time.Second,
-			5*time.Second,
-			false,
+			cfg.TCPSockets.Routes,
+			time.Second*time.Duration(cfg.TCPSockets.HandshakeTimeout),
+			time.Second*time.Duration(cfg.TCPSockets.DialTimeout),
+			time.Second*time.Duration(cfg.TCPSockets.WriteTimeout),
+			cfg.TCPSockets.CompressionEnabled,
 		)
 		proxies     []string
 		rootHandler http.Handler
@@ -30,7 +32,7 @@ func Serve(cfg *Config) (err error) {
 
 	http.Handle(internal.ProxyPath, http.HandlerFunc(proxyHandler.Proxy()))
 
-	for pth, cfg := range cfg.Routes.Http {
+	for pth, cfg := range cfg.HTTP.Routes {
 		if cfg.Disabled {
 			continue
 		}
@@ -55,7 +57,7 @@ func Serve(cfg *Config) (err error) {
 		proxies = append(proxies, fmt.Sprintf("HTTP %q 🡒 %s", pth, cfg.ToString(pth)))
 	}
 
-	for pth, sck := range cfg.Routes.TCPSockets {
+	for pth, sck := range cfg.TCPSockets.Routes {
 		if sck.Disabled {
 			continue
 		}
