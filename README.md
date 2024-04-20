@@ -15,8 +15,6 @@ Usage:
 httpdx create-config [OPTIONS] ARG...
 
 Options:
-  -config string
-        YAML configuration file (default "httpdx.yml")
   -out string
         The output file (default "-")
   -server-addr string

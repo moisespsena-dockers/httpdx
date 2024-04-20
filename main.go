@@ -154,7 +154,6 @@ func runCreateConfig(parent *flag.FlagSet, args []string) (err error) {
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Usage:\n")
 		fmt.Fprintf(fs.Output(), "%s [OPTIONS] ARG...\n\nOptions:\n", fs.Name())
-		parent.PrintDefaults()
 		fs.PrintDefaults()
 	}
 
