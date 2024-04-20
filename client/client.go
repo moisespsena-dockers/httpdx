@@ -16,6 +16,8 @@ import (
 	"github.com/moisespsena-go/httpdx/internal"
 )
 
+const pingPayload = "!!test!!"
+
 type Listener struct {
 	id string
 	l  net.Listener
@@ -26,20 +28,23 @@ func Run(cfg *Config) (err error) {
 	signal.Notify(interrupt, os.Interrupt)
 	serverURL := cfg.ServerURL + internal.ProxyPath
 
-	if _, err = url.Parse(serverURL); err != nil {
+	var u *url.URL
+	if u, err = url.Parse(serverURL); err != nil {
 		return
 	}
 
-	log.Println("URL: " + serverURL)
+	log.Println("Server URL: " + u.String())
 
-	c, _, err := websocket.DefaultDialer.Dial(serverURL+"?name="+internal.TestService, nil)
+	if strings.HasPrefix(u.Scheme, "http") {
+		u.Scheme = "ws" + u.Scheme[4:]
+	}
+
+	log.Println("Connection URL: " + u.String())
+	u.RawQuery = "name=" + internal.TestRoute
+	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
 		return fmt.Errorf("test_service dial: %s", err)
 	}
-
-	var (
-		pingPayload = "!!test!!"
-	)
 
 	c.SetPongHandler(func(appData string) error {
 		if appData != pingPayload {
@@ -84,7 +89,7 @@ func Run(cfg *Config) (err error) {
 }
 
 func runService(done func(), i int, serverURL, name, localAddr string) (_ *Listener) {
-	id := "[" + strconv.Itoa(i) + "]" + name + "@" + localAddr
+	id := "route #" + strconv.Itoa(i) + " {" + name + " 🡒 " + localAddr + "}:"
 	log.Println(id, "started")
 
 	l, err := net.Listen("tcp4", localAddr)

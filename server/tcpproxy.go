@@ -57,7 +57,7 @@ func (h *Handler) Proxy() func(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "name is blank", http.StatusPreconditionFailed)
 		}
 
-		if name == internal.TestService {
+		if name == internal.TestRoute {
 			conn, err := h.upgrader.Upgrade(w, r, nil)
 			if err != nil {
 				return

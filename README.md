@@ -1,13 +1,36 @@
 # httpdx
 HTTP server with TCP proxies
 
-## Config File Example
+Run `httpdx -h` for usage detail.
 
-./httpdx.yml
+
+## Create Config
+
+Create config file from template.
+
+Runs `httpdx create-config -h` to usage.
+
+```
+Usage:
+httpdx create-config [OPTIONS] ARG...
+
+Options:
+  -config string
+        YAML configuration file (default "httpdx.yml")
+  -out string
+        The output file (default "-")
+  -server-addr string
+        The httpdx server addr (default ":80")
+  -server-url string
+        The httpdx server url (default "http://127.0.0.1:80")
+```
+
+### Config File Example
+
 
 ```
 client:
-  server_url: "ws://localhost:7000"
+  server_url: "http://localhost:7000"
   routes:
     - name: ssh
       local_addr: :25000
@@ -55,7 +78,19 @@ server:
 
 Starts the server.
 
-Runs `httpdx -h` to usage.
+Runs `httpdx server -h` to usage:
+
+```
+Usage:
+httpdx server [OPTIONS] ARG...
+
+Options:
+  -config string
+        YAML configuration file (default "___8httpdx.yml")
+  -addr string
+        The server Address
+```
+
 
 `httpdx` or `httpdx -config ./httpdx.yml`
 
@@ -67,9 +102,20 @@ Starts the cliente to dispose remote tcp_sockets into local addr.
 
 Runs `httpdx client -h` to usage.
 
-Pass services as args `SERVICE_NAME@LOCAL_ADDR`.
+```
+Usage:
+httpdx_client [OPTIONS] ARG...
+
+Options:
+  -config string
+        YAML configuration file (default "___httpdx_client.yml")
+  -server-url string
+        The httpdx server url
+```
+
+Pass services as args `NAME:LOCAL_ADDR`.
 
 - `httpdx client`, or 
 - `httpdx -config ./httpdx.yml client`, or
-- `httpdx client ssh@localhost:26000 other@localhost:26001`, or
-- `httpdx -config ./httpdx.yml client ssh@localhost:26000 other@localhost:26001` 
+- `httpdx client ssh:localhost:26000 other:localhost:26001`, or
+- `httpdx -config ./httpdx.yml client ssh:localhost:26000 other:localhost:26001` 
