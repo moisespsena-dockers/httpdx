@@ -1,5 +1,5 @@
 # httpdx
-HTTP server with TCP proxies
+Provides HTTP reverse proxy and TCP proxies by websocket.
 
 Run `httpdx -h` for usage detail.
 
