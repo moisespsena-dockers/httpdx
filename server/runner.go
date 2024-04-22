@@ -15,7 +15,7 @@ import (
 	"github.com/moisespsena-go/httpdx/internal"
 )
 
-func Serve(cfg *Config, args []string) (err error) {
+func Serve(cfg *Config) (err error) {
 	cfg.TCPSockets.Defaults()
 
 	var (

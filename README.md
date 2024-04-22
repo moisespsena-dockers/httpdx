@@ -76,11 +76,14 @@ server:
 
 Starts the server.
 
+
+Runs `httpdx server -h` or `httpdx server [OPTIONS ARG];;;`.
+
 Runs `httpdx server -h` to usage:
 
 ```
 Usage:
-httpdx server [OPTIONS] ARG...
+httpdx server [OPTIONS]
 
 Options:
   -config string

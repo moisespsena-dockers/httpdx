@@ -5,28 +5,35 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
-	"log"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime/debug"
+	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/moisespsena-go/httpdx/client"
 	"github.com/moisespsena-go/httpdx/server"
 	"gopkg.in/yaml.v3"
 )
 
-var configFile = filepath.Base(os.Args[0]) + ".yml"
+var (
+	configFile = filepath.Base(os.Args[0]) + ".yml"
+	buildTime  string
+)
 
 func main() {
 	fs := flag.NewFlagSet(filepath.Base(os.Args[0]), flag.ContinueOnError)
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Usage:\n")
-		fmt.Fprintf(fs.Output(), "%s COMMAND [OPTIONS] ARG...\n\n", fs.Name())
+		fmt.Fprintf(fs.Output(), "%s [COMMAND] [OPTIONS]\n\n", fs.Name())
 		fmt.Fprintf(fs.Output(), "Available commands:\n"+
-			"  server:        run as server.\n"+
-			"  client:        run as client.\n"+
-			"  create-config: create config file.\n\n")
+			"  server (default): run as server.\n"+
+			"  client:           run as client.\n"+
+			"  create-config:    create config file.\n"+
+			"  info:             print program information.\n\n")
 		fmt.Fprintf(fs.Output(), "Default Options:\n")
 		fs.PrintDefaults()
 	}
@@ -39,41 +46,40 @@ func main() {
 	}
 
 	var (
-		args       = fs.Args()
-		cfg        Config
+		args = fs.Args()
+		cfg  Config
+		err  error
+
 		readConfig = func() {
-			data, err := os.ReadFile(configFile)
-
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			if err = yaml.Unmarshal(data, &cfg); err != nil {
-				log.Fatal(err)
+			var data []byte
+			if data, err = os.ReadFile(configFile); err == nil {
+				err = yaml.Unmarshal(data, &cfg)
 			}
 		}
-		err error
 	)
 
-	if len(args) > 0 {
+	if l := len(args); l == 0 || args[0] == "server" {
+		if readConfig(); err == nil {
+			err = runServer(fs, &cfg.Server, nil)
+		}
+	} else if l > 0 {
 		switch args[0] {
-		case "server":
-			readConfig()
-			if err = runServer(fs, &cfg.Server, args[1:]); err != nil {
-				log.Fatal(err)
-			}
 		case "client":
-			readConfig()
-			if err = runClient(fs, &cfg.Client, args[1:]); err != nil {
-				log.Fatal(err)
+			if readConfig(); err == nil {
+				err = runClient(fs, &cfg.Client, args[1:])
 			}
 		case "create-config":
-			if err = runCreateConfig(fs, args[1:]); err != nil {
-				log.Fatal(err)
-			}
+			err = runCreateConfig(fs, args[1:])
+		case "info":
+			err = runAbout(fs, args[1:])
 		default:
-			log.Fatalf("Unknown command %q", args[0])
+			err = fmt.Errorf("Unknown command %q", args[0])
 		}
+	}
+
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 }
 
@@ -100,9 +106,7 @@ func runServer(parent *flag.FlagSet, cfg *server.Config, args []string) (err err
 		}
 		return
 	}
-
-	args = fs.Args()
-	return server.Serve(cfg, args)
+	return server.Serve(cfg)
 }
 
 var configRe = regexp.MustCompile(`^([^:]+):(.*:\d+)$`)
@@ -236,6 +240,91 @@ server:
 		"ServerUrl":  serverUrl,
 		"ServerAddr": serverAddr,
 	})
+}
+
+func runAbout(parent *flag.FlagSet, args []string) (err error) {
+	var (
+		fs     = flag.NewFlagSet(parent.Name()+" info", flag.ContinueOnError)
+		format = "Commit Id: {{.CommitID}}\n" +
+			"Commit Time: {{.CommitTime}}\n" +
+			"Build Time: {{.BuildTime}}{{if .CommitModified}} (modified){{end}}\n" +
+			"{{if .GoVarsKeys}}" +
+			"{{$goVars := .GoVars}}" +
+			"Go Variables:\n" +
+			"{{range .GoVarsKeys}}" +
+			"  {{.}}={{index $goVars .}}\n" +
+			"{{end}}" +
+			"{{end}}" +
+			"Project Page: {{.SiteUrl}}"
+	)
+	fs.Usage = func() {
+		fmt.Fprintf(fs.Output(), "Usage:\n")
+		fmt.Fprintf(fs.Output(), "%s [OPTIONS] ARG...\n\nOptions:\n", fs.Name())
+		parent.PrintDefaults()
+		fs.PrintDefaults()
+	}
+
+	fs.StringVar(&format, "format", format, "print version info by go template format."+
+		"\n")
+
+	if err = fs.Parse(args); err != nil {
+		if err.Error() == "flag: help requested" {
+			err = nil
+		}
+		return
+	}
+
+	var (
+		t                    *template.Template
+		commitID, commitTime string
+		modified             bool
+		goVarsKeys           []string
+		goVars               = map[string]string{}
+	)
+
+	if t, err = template.New("info").Parse(format); err != nil {
+		return
+	}
+
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, setting := range info.Settings {
+			switch setting.Key {
+			case "vcs":
+			case "vcs.time":
+				commitTime = setting.Value
+			case "vcs.revision":
+				commitID = setting.Value
+			case "vcs.modified":
+				modified = true
+			default:
+				goVarsKeys = append(goVarsKeys, setting.Key)
+				goVars[setting.Key] = setting.Value
+			}
+		}
+	}
+
+	sort.Strings(goVarsKeys)
+
+	if buildTime != "" {
+		if i, _ := strconv.Atoi(buildTime); i > 0 {
+			t := time.Unix(int64(i), 0)
+			buildTime = t.UTC().Format("2006-01-02T15:04:05Z")
+		}
+	}
+
+	err = t.Execute(os.Stdout, map[string]any{
+		"CommitID":       commitID,
+		"CommitTime":     commitTime,
+		"CommitModified": modified,
+		"BuildTime":      buildTime,
+		"GoVars":         goVars,
+		"GoVarsKeys":     goVarsKeys,
+		"SiteUrl":        "https://github.com/moisespsena-go/httpdx",
+	})
+	if err == nil {
+		println()
+	}
+	return
 }
 
 func portFrom(s string) (port string, err error) {
