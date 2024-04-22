@@ -13,7 +13,7 @@ docker_build:
 	$(DOCKER_CMD) build --build-arg PORT=$(SERVER_PORT) --tag ${tag}:${GIT_HASH} .
 
 docker_run:
-	$(DOCKER_CMD) run ${tag}
+	$(DOCKER_CMD) run -p ${ADDR}:${SERVER_PORT} ${tag}
 
 docker_push: docker_build
 	$(DOCKER_CMD) push ${tag}:${GIT_HASH}
