@@ -66,7 +66,7 @@ func Run(cfg *Config) (err error) {
 	for i, service := range cfg.Routes {
 		if l := runService(func() {
 			done <- i + 1
-		}, i, serverURL, service.Name, service.LocalAddr); l != nil {
+		}, i, u, service.Name, service.LocalAddr); l != nil {
 			listeners = append(listeners, l)
 		}
 	}
@@ -88,7 +88,7 @@ func Run(cfg *Config) (err error) {
 	return
 }
 
-func runService(done func(), i int, serverURL, name, localAddr string) (_ *Listener) {
+func runService(done func(), i int, u *url.URL, name, localAddr string) (_ *Listener) {
 	id := "route #" + strconv.Itoa(i) + " {" + name + " 🡒 " + localAddr + "}:"
 	log.Println(id, "started")
 
@@ -112,17 +112,21 @@ func runService(done func(), i int, serverURL, name, localAddr string) (_ *Liste
 				}
 				return
 			}
-			go handleConnection(serverURL+"?name="+name, id, c)
+			{
+				u := *u
+				u.RawQuery = "name=" + name
+				go handleConnection(u, id, c)
+			}
 		}
 	}()
 
 	return &Listener{id, l}
 }
 
-func handleConnection(serverUrl, id string, con net.Conn) {
+func handleConnection(u url.URL, id string, con net.Conn) {
 	log.Printf("%s: serving %s", id, con.RemoteAddr().String())
 
-	c, _, err := websocket.DefaultDialer.Dial(serverUrl, nil)
+	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
 		log.Printf(id+": dial: %v", err)
 		return
