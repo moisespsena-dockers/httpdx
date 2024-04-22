@@ -18,13 +18,13 @@ RUN set -eux; \
         make \
         pkg-config
 
-WORKDIR /
-
 RUN mkdir /config && \
-    httpdx create-config -out "/config/httpdx.yml"
+    httpdx create-config -server-addr $PORT -out "/config/httpdx.yml"
 
 VOLUME /config
 
 EXPOSE $PORT
 
-CMD ["httpdx", "--config", "/config/httpdx.yml"]
+WORKDIR /config
+
+CMD ["httpdx"]

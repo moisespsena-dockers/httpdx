@@ -151,7 +151,7 @@ func runCreateConfig(parent *flag.FlagSet, args []string) (err error) {
 	var (
 		fs         = flag.NewFlagSet(parent.Name()+" create-config", flag.ContinueOnError)
 		serverAddr = ":80"
-		serverUrl  = "http://127.0.0.1:${PORT}"
+		serverUrl  = "http://127.0.0.1:PORT"
 		out        = "-"
 	)
 
@@ -160,12 +160,6 @@ func runCreateConfig(parent *flag.FlagSet, args []string) (err error) {
 		fmt.Fprintf(fs.Output(), "%s [OPTIONS] ARG...\n\nOptions:\n", fs.Name())
 		fs.PrintDefaults()
 	}
-
-	var port string
-	if port, err = portFrom(serverAddr); err != nil {
-		return
-	}
-	serverUrl = strings.ReplaceAll(serverUrl, "${PORT}", port)
 
 	fs.StringVar(&serverUrl, "server-url", serverUrl, "The httpdx server url")
 	fs.StringVar(&serverAddr, "server-addr", serverAddr, "The httpdx server addr")
@@ -177,6 +171,15 @@ func runCreateConfig(parent *flag.FlagSet, args []string) (err error) {
 		}
 		return
 	}
+
+	var port string
+
+	if i2, _ := strconv.Atoi(serverAddr); i2 > 0 {
+		port = serverAddr
+	} else if port, err = portFrom(serverAddr); err != nil {
+		return
+	}
+	serverUrl = strings.ReplaceAll(serverUrl, "PORT", port)
 
 	t, _ := template.New("confile").Parse(`client:
   server_url: "{{.ServerUrl}}"
