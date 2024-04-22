@@ -9,7 +9,14 @@ COPY ./ /app
 RUN set -eux; \
     cd /app && \
     go build -ldflags="-X main.buildTime=$(date +%s)" -o /bin/httpdx . && \
-    rm -rf /app
+    rm -rf /app && \
+    rm -rf /usr/local/go && \
+    apt purge -y \
+        g++ \
+        gcc \
+        libc6-dev \
+        make \
+        pkg-config
 
 WORKDIR /
 
