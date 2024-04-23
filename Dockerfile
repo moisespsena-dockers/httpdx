@@ -16,7 +16,19 @@ RUN set -eux; \
         gcc \
         libc6-dev \
         make \
-        pkg-config
+        pkg-config; \
+    apt update; \
+    apt install -y curl \
+        vim \
+        nano \
+        tmux \
+        iproute2 \
+        iputils-ping \
+        tree; \
+    rm -rf /var/lib/apt/lists/*;
+
+ENV GOPATH=""
+ENV GOVERSION=""
 
 RUN mkdir /config && \
     httpdx create-config -server-addr $PORT -out "/config/httpdx.yml"
