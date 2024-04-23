@@ -180,6 +180,7 @@ func runCreateConfig(parent *flag.FlagSet, args []string) (err error) {
 
 	if i2, _ := strconv.Atoi(serverAddr); i2 > 0 {
 		port = serverAddr
+		serverAddr = ":" + serverAddr
 	} else if port, err = portFrom(serverAddr); err != nil {
 		return
 	}
