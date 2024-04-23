@@ -18,7 +18,7 @@ docker_run:
 docker_push: docker_build
 	$(DOCKER_CMD) push ${tag}:${GIT_HASH}
 
-docker_release: docker_build
+docker_release: docker_push
 	docker pull ${tag}:${GIT_HASH}
 	docker tag  ${tag}:${GIT_HASH} ${tag}:latest
 	docker push ${tag}:latest
