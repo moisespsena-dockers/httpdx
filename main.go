@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "embed"
 	"errors"
 	"flag"
 	"fmt"
@@ -136,7 +137,7 @@ func runClient(parent *flag.FlagSet, cfg *client.Config, args []string) (err err
 			if m := configRe.FindStringSubmatch(arg); len(m) == 0 {
 				return fmt.Errorf("bad argument format")
 			} else {
-				cfg.Routes = append(cfg.Routes, client.RouteConfig{
+				cfg.Routes = append(cfg.Routes, &client.RouteConfig{
 					Name:      m[1],
 					LocalAddr: m[2],
 				})
@@ -146,6 +147,9 @@ func runClient(parent *flag.FlagSet, cfg *client.Config, args []string) (err err
 
 	return client.Run(cfg)
 }
+
+//go:embed config_template.yml
+var configTemplate string
 
 func runCreateConfig(parent *flag.FlagSet, args []string) (err error) {
 	var (
@@ -181,50 +185,7 @@ func runCreateConfig(parent *flag.FlagSet, args []string) (err error) {
 	}
 	serverUrl = strings.ReplaceAll(serverUrl, "PORT", port)
 
-	t, _ := template.New("confile").Parse(`client:
-  server_url: "{{.ServerUrl}}"
-  routes:
-    # - name: ssh
-    #  local_addr: :25000
-      
-server:
-  addr: "{{.ServerAddr}}"
-  
-  # not found HTML file to handles not found error.
-  # If not set, uses default not found handler message.
-  # not_found: "my_not_found.html"
-  
-  # if is true, disables not found handles
-  # not_found_disabled: false
-  
-  tcp_sockets:
-    # timeouts is in seconds (default is 5s).
-    # handshake_timeout: 5
-    # dial_timeout: 5
-    # write_timeout: 5
-    
-    # compression_enabled: false
-    
-    routes:
-      # ssh: 
-      #  addr: localhost:22
-      #  disabled: false
-    
-  
-  http:
-    routes:
-      # /:
-      #  addr: 127.0.0.1:80
-      #  disabled: false
-        
-      # proxify /my-dir as / to destination and pass '/my-dir' 
-      # into request header 'path_header' (default is 'X-Forwarded-Prefix')
-      # /my-dir:
-      #  addr: 127.0.0.1:80
-      #  dir: true
-      #  path_header: X-Forwarded-Prefix
-      #  disabled: false
-`)
+	t, _ := template.New("confile").Parse(configTemplate)
 
 	var w = os.Stdout
 

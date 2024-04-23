@@ -1,6 +1,8 @@
 package server
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
 	"fmt"
 	"io"
 	"net"
@@ -52,23 +54,49 @@ func New(
 // Proxy proxy handler
 func (h *Handler) Proxy() func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
+		wc, err := h.upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			http.Error(w, "WEBSOCKET failed: "+err.Error(), http.StatusPreconditionFailed)
+			return
+		}
+
+		fail := func(msg string) {
+			wc.WriteMessage(websocket.TextMessage, []byte("ERROR: "+msg))
+			wc.Close()
+		}
+
 		name := r.URL.Query().Get("name")
 		if name == "" {
-			http.Error(w, "name is blank", http.StatusPreconditionFailed)
+			fail("name is blank")
+			return
 		}
 
 		if name == internal.TestRoute {
-			conn, err := h.upgrader.Upgrade(w, r, nil)
-			if err != nil {
-				return
-			}
-			conn.PingHandler()("!!test!!")
+			wc.PingHandler()("!!test!!")
 			return
 		}
 
 		sck := h.handlers[name]
 		if sck.Addr == "" {
-			http.Error(w, fmt.Sprintf("%q is not registered"), http.StatusPreconditionFailed)
+			fail(fmt.Sprintf("%q is not registered"))
+			return
+		}
+
+		if sck.Auth != nil && !sck.Auth.Disabled {
+			username, password, _ := r.BasicAuth()
+			// Calculate SHA-256 hashes for the provided and expected
+			// usernames and passwords.
+			usernameHash := sha256.Sum256([]byte(username))
+			passwordHash := sha256.Sum256([]byte(password))
+			expectedUsernameHash := sha256.Sum256([]byte(sck.Auth.User))
+			expectedPasswordHash := sha256.Sum256([]byte(sck.Auth.Password))
+
+			usernameMatch := (subtle.ConstantTimeCompare(usernameHash[:], expectedUsernameHash[:]) == 1)
+			passwordMatch := (subtle.ConstantTimeCompare(passwordHash[:], expectedPasswordHash[:]) == 1)
+			if !usernameMatch || !passwordMatch {
+				fail("invalid username or password")
+				return
+			}
 		}
 
 		s, err := net.DialTimeout("tcp", sck.Addr, h.dialTimeout)
@@ -78,13 +106,7 @@ func (h *Handler) Proxy() func(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		conn, err := h.upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			s.Close()
-			return
-		}
-
-		rwc := &wsConnRW{c: conn}
+		rwc := &wsConnRW{c: wc}
 
 		doneCh := make(chan bool)
 
@@ -102,7 +124,7 @@ func (h *Handler) Proxy() func(w http.ResponseWriter, r *http.Request) {
 
 		<-doneCh
 		s.Close()
-		conn.Close()
+		wc.Close()
 		<-doneCh
 	}
 

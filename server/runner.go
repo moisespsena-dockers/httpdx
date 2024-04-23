@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"path"
 	"reflect"
 	"sort"
@@ -39,7 +40,7 @@ func Serve(cfg *Config) (err error) {
 
 		var proxy http.Handler
 
-		if cfg.Dir {
+		if cfg.PathStrip {
 			pth = strings.TrimRight(pth, "/") + "/"
 		}
 
@@ -61,6 +62,10 @@ func Serve(cfg *Config) (err error) {
 		if sck.Disabled {
 			continue
 		}
+		if sck.Auth == nil {
+			sck.Auth = cfg.TCPSockets.Auth
+		}
+
 		proxies = append(proxies, fmt.Sprintf("TCP %q 🡒 %s", pth, sck))
 	}
 
@@ -124,12 +129,30 @@ func (h Handlers) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func createReverseProxy(pth string, cfg *HttpConfig) (http.Handler, error) {
+	if cfg.Dir != "" {
+		h := http.FileServer(http.FS(os.DirFS(cfg.Dir)))
+		if cfg.PathOverride == "" {
+			cfg.PathOverride = "%[1]s"
+		}
+
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			u := *r.URL
+			u.Path = "/" + strings.TrimPrefix(strings.TrimPrefix(u.Path, pth), "/")
+			if cfg.PathOverride != "" {
+				u.Path = fmt.Sprintf(cfg.PathOverride, u.Path, cfg.Dir, pth)
+			}
+			r2 := *r
+			r2.URL = &u
+			h.ServeHTTP(w, &r2)
+		}), nil
+	}
+
 	targetURL, err := url.Parse("http://" + cfg.Addr)
 	if err != nil {
 		return nil, err
 	}
 	rv := httputil.NewSingleHostReverseProxy(targetURL)
-	if cfg.Dir {
+	if cfg.PathStrip {
 		headerName := cfg.PathHeader
 		if headerName == "" {
 			headerName = "X-Forwarded-Prefix"

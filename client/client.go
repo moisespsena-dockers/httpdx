@@ -1,11 +1,13 @@
 package client
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
@@ -63,10 +65,18 @@ func Run(cfg *Config) (err error) {
 		doneCount int
 	)
 
-	for i, service := range cfg.Routes {
+	for i, route := range cfg.Routes {
+		if route.Disabled {
+			continue
+		}
+
+		if route.Auth == nil {
+			route.Auth = cfg.Auth
+		}
+
 		if l := runService(func() {
 			done <- i + 1
-		}, i, u, service.Name, service.LocalAddr); l != nil {
+		}, i, u, route); l != nil {
 			listeners = append(listeners, l)
 		}
 	}
@@ -88,11 +98,11 @@ func Run(cfg *Config) (err error) {
 	return
 }
 
-func runService(done func(), i int, u *url.URL, name, localAddr string) (_ *Listener) {
-	id := "route #" + strconv.Itoa(i) + " {" + name + " 🡒 " + localAddr + "}:"
+func runService(done func(), i int, u *url.URL, cfg *RouteConfig) (_ *Listener) {
+	id := "route #" + strconv.Itoa(i) + " {" + cfg.Name + " 🡒 " + cfg.LocalAddr + "}:"
 	log.Println(id, "started")
 
-	l, err := net.Listen("tcp4", localAddr)
+	l, err := net.Listen("tcp4", cfg.LocalAddr)
 	if err != nil {
 		log.Printf("%s: listen: %v", id, err)
 		return
@@ -114,8 +124,8 @@ func runService(done func(), i int, u *url.URL, name, localAddr string) (_ *List
 			}
 			{
 				u := *u
-				u.RawQuery = "name=" + name
-				go handleConnection(u, id, c)
+				u.RawQuery = "name=" + cfg.Name
+				go handleConnection(u, id, c, cfg.Auth)
 			}
 		}
 	}()
@@ -123,14 +133,22 @@ func runService(done func(), i int, u *url.URL, name, localAddr string) (_ *List
 	return &Listener{id, l}
 }
 
-func handleConnection(u url.URL, id string, con net.Conn) {
+func handleConnection(u url.URL, id string, con net.Conn, auth *AuthConfig) {
 	log.Printf("%s: serving %s", id, con.RemoteAddr().String())
 
-	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+	var header http.Header
+
+	if auth != nil {
+		header = map[string][]string{}
+		header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(auth.User+":"+auth.Password)))
+	}
+
+	c, _, err := websocket.DefaultDialer.Dial(u.String(), header)
 	if err != nil {
 		log.Printf(id+": dial: %v", err)
 		return
 	}
+
 	defer c.Close()
 
 	go func() {
@@ -151,7 +169,13 @@ func handleConnection(u url.URL, id string, con net.Conn) {
 					}
 				}
 			}()
-			_, msg, err = c.ReadMessage()
+			for t := websocket.TextMessage; err == nil && t != websocket.BinaryMessage; {
+				t, msg, err = c.ReadMessage()
+				if t == websocket.TextMessage {
+					// is a log message
+					log.Print(id + ": REMOTE MESSAGE: " + string(msg))
+				}
+			}
 			return
 		}
 		for {
