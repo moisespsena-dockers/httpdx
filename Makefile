@@ -35,10 +35,11 @@ docker_build_all: docker_build_binary docker_build
 docker_build_run: docker_build docker_run
 docker_build_all_run: docker_build_all docker_run
 
-docker_push: docker_build
+docker_push: docker_build_all
 	$(DOCKER_CMD) push ${tag}:${GIT_HASH}
-
 
 docker_release: docker_push
 	$(DOCKER_CMD) pull ${tag}:${GIT_HASH}
 	$(DOCKER_CMD) push ${tag}:latest
+
+
