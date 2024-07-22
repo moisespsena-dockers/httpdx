@@ -21,17 +21,19 @@ docker_build_binary:
 		golang:1.22-bullseye \
 		bash -c 'cd /src && go build -o /src/dist/httpdx_go1.22_bullseye'
 
-docker_build: docker_build_binary
+docker_build:
 	$(DOCKER_CMD) build \
 	--build-arg PORT=$(SERVER_PORT) \
 	--tag ${tag}:${GIT_HASH} .
-
 	$(DOCKER_CMD) tag  ${tag}:${GIT_HASH} ${tag}:latest
 
 docker_run:
 	$(DOCKER_CMD) run -p ${ADDR}:${SERVER_PORT} ${tag}:${GIT_HASH}
 
+
+docker_build_all: docker_build_binary docker_build
 docker_build_run: docker_build docker_run
+docker_build_all_run: docker_build_all docker_run
 
 docker_push: docker_build
 	$(DOCKER_CMD) push ${tag}:${GIT_HASH}
