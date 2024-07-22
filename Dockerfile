@@ -1,22 +1,11 @@
-FROM golang:1.22-bullseye
-
+FROM debian:bullseye-slim
 LABEL authors="moisespsena"
 
 ARG PORT=80
 
-COPY ./ /app
+COPY ./dist/httpdx_go1.22_bullseye /bin/httpdx
 
 RUN set -eux; \
-    cd /app && \
-    go build -ldflags="-X main.buildTime=$(date +%s)" -o /bin/httpdx . && \
-    rm -rf /app && \
-    rm -rf /usr/local/go && \
-    apt purge -y \
-        g++ \
-        gcc \
-        libc6-dev \
-        make \
-        pkg-config; \
     apt update; \
     apt install -y curl \
         vim \
@@ -27,9 +16,6 @@ RUN set -eux; \
         tree; \
     rm -rf /var/lib/apt/lists/*;
 
-ENV GOPATH=""
-ENV GOVERSION=""
-
 RUN mkdir /config && \
     httpdx create-config -server-addr $PORT -out "/config/httpdx.yml"
 
@@ -39,4 +25,5 @@ EXPOSE $PORT
 
 WORKDIR /config
 
+ENTRYPOINT ["httpdx"]
 CMD ["httpdx"]
