@@ -25,5 +25,4 @@ EXPOSE $PORT
 
 WORKDIR /config
 
-ENTRYPOINT ["httpdx"]
 CMD ["httpdx"]

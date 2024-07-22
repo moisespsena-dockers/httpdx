@@ -26,13 +26,17 @@ docker_build: docker_build_binary
 	--build-arg PORT=$(SERVER_PORT) \
 	--tag ${tag}:${GIT_HASH} .
 
+	$(DOCKER_CMD) tag  ${tag}:${GIT_HASH} ${tag}:latest
+
 docker_run:
-	$(DOCKER_CMD) run -p ${ADDR}:${SERVER_PORT} ${tag}
+	$(DOCKER_CMD) run -p ${ADDR}:${SERVER_PORT} ${tag}:${GIT_HASH}
+
+docker_build_run: docker_build docker_run
 
 docker_push: docker_build
 	$(DOCKER_CMD) push ${tag}:${GIT_HASH}
 
+
 docker_release: docker_push
-	docker pull ${tag}:${GIT_HASH}
-	docker tag  ${tag}:${GIT_HASH} ${tag}:latest
-	docker push ${tag}:latest
+	$(DOCKER_CMD) pull ${tag}:${GIT_HASH}
+	$(DOCKER_CMD) push ${tag}:latest
