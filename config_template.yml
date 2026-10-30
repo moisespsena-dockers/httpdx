@@ -1,6 +1,12 @@
 client:
   server_url: "{{.ServerUrl}}"
 
+  # how often an open connection pings the server, so that a reverse proxy in
+  # front of it (nginx: proxy_read_timeout, 60s by default) does not close an
+  # idle one — a psql or ssh session without traffic. A Go duration; empty:
+  # 25s; "0": never.
+  keep_alive: 25s
+
 #  # default authentication configuration
 #  auth:
 #    user: my-user

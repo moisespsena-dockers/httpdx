@@ -73,12 +73,14 @@ func (h *Handler) Proxy() func(w http.ResponseWriter, r *http.Request) {
 
 		if name == internal.TestRoute {
 			wc.PingHandler()("!!test!!")
+			wc.Close()
 			return
 		}
 
+		// a name not registered — nil — was a panic
 		sck := h.handlers[name]
-		if sck.Addr == "" {
-			fail(fmt.Sprintf("%q is not registered"))
+		if sck == nil || sck.Addr == "" {
+			fail(fmt.Sprintf("%q is not registered", name))
 			return
 		}
 
@@ -102,7 +104,9 @@ func (h *Handler) Proxy() func(w http.ResponseWriter, r *http.Request) {
 		s, err := net.DialTimeout("tcp", sck.Addr, h.dialTimeout)
 
 		if err != nil {
-			http.Error(w, fmt.Sprintf("Could not connect upstream: %v", err), 500)
+			// the connection is a websocket now: an HTTP answer no longer
+			// reaches the client
+			fail(fmt.Sprintf("could not connect upstream: %v", err))
 			return
 		}
 

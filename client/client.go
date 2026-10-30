@@ -2,7 +2,6 @@ package client
 
 import (
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -13,6 +12,8 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/moisespsena-go/httpdx/internal"
@@ -20,15 +21,45 @@ import (
 
 const pingPayload = "!!test!!"
 
+// DefaultKeepAlive is how often a connection pings the server when the config
+// says nothing (Config.KeepAlive): under the 60s a reverse proxy commonly
+// closes an idle websocket after.
+const DefaultKeepAlive = 25 * time.Second
+
+// writeWait is how long a ping may take to be written.
+const writeWait = 10 * time.Second
+
 type Listener struct {
 	id string
 	l  net.Listener
+}
+
+// keepAliveOf is the interval of cfg.KeepAlive: DefaultKeepAlive when empty, 0
+// (none) when "0".
+func keepAliveOf(cfg *Config) (time.Duration, error) {
+	s := strings.TrimSpace(cfg.KeepAlive)
+	if s == "" {
+		return DefaultKeepAlive, nil
+	}
+	if s == "0" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 0, fmt.Errorf("keep_alive: %w", err)
+	}
+	return d, nil
 }
 
 func Run(cfg *Config) (err error) {
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt)
 	serverURL := cfg.ServerURL + internal.ProxyPath
+
+	keepAlive, err := keepAliveOf(cfg)
+	if err != nil {
+		return err
+	}
 
 	var u *url.URL
 	if u, err = url.Parse(serverURL); err != nil {
@@ -42,6 +73,7 @@ func Run(cfg *Config) (err error) {
 	}
 
 	log.Println("Connection URL: " + u.String())
+	log.Printf("Keep alive: %v", keepAlive)
 	u.RawQuery = "name=" + internal.TestRoute
 	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
@@ -60,9 +92,11 @@ func Run(cfg *Config) (err error) {
 	c.Close()
 
 	var (
-		listeners []*Listener
-		done      = make(chan int)
-		doneCount int
+		// the listeners serving, by themselves: a route disabled, or that
+		// could not listen, has none — the ones that do are not numbered
+		// by the routes
+		listeners = map[*Listener]bool{}
+		done      = make(chan *Listener)
 	)
 
 	for i, route := range cfg.Routes {
@@ -74,49 +108,53 @@ func Run(cfg *Config) (err error) {
 			route.Auth = cfg.Auth
 		}
 
-		if l := runService(func() {
-			done <- i + 1
-		}, i, u, route); l != nil {
-			listeners = append(listeners, l)
+		if l := runService(done, i, u, route, keepAlive); l != nil {
+			listeners[l] = true
 		}
 	}
 
-	for doneCount < len(listeners) {
+	for len(listeners) > 0 {
 		select {
 		case <-interrupt:
-			for _, l := range listeners {
-				if l != nil {
-					l.l.Close()
-				}
+			for l := range listeners {
+				l.l.Close()
 			}
-		case i := <-done:
-			listeners[i-1] = nil
-			doneCount++
+		case l := <-done:
+			delete(listeners, l)
 		}
 	}
 
 	return
 }
 
-func runService(done func(), i int, u *url.URL, cfg *RouteConfig) (_ *Listener) {
+func runService(done chan<- *Listener, i int, u *url.URL, cfg *RouteConfig, keepAlive time.Duration) *Listener {
 	id := "route #" + strconv.Itoa(i) + " {" + cfg.Name + " 🡒 " + cfg.LocalAddr + "}:"
 	log.Println(id, "started")
 
 	l, err := net.Listen("tcp4", cfg.LocalAddr)
 	if err != nil {
 		log.Printf("%s: listen: %v", id, err)
-		return
+		return nil
 	}
+
+	lis := &Listener{id, l}
 
 	go func() {
 		defer func() {
 			l.Close()
 			log.Println(id, "done")
-			done()
+			done <- lis
 		}()
 		for {
 			c, err := l.Accept()
 			if err != nil {
+				if ne, ok := err.(net.Error); ok && ne.Timeout() {
+					// a temporary failure (too many open files…): not the
+					// end of the route
+					log.Printf("%s: accept: %v", id, err)
+					time.Sleep(100 * time.Millisecond)
+					continue
+				}
 				if !strings.HasSuffix(err.Error(), "use of closed network connection") {
 					log.Printf("%s: accept: %v", id, err)
 				}
@@ -125,20 +163,20 @@ func runService(done func(), i int, u *url.URL, cfg *RouteConfig) (_ *Listener) 
 			{
 				u := *u
 				u.RawQuery = "name=" + cfg.Name
-				go handleConnection(u, id, c, cfg.Auth)
+				go handleConnection(u, id, c, cfg.Auth, keepAlive)
 			}
 		}
 	}()
 
-	return &Listener{id, l}
+	return lis
 }
 
-func handleConnection(u url.URL, id string, con net.Conn, auth *AuthConfig) {
+func handleConnection(u url.URL, id string, con net.Conn, auth *AuthConfig, keepAlive time.Duration) {
 	log.Printf("%s: serving %s", id, con.RemoteAddr().String())
 
 	var header http.Header
 
-	if auth != nil {
+	if auth != nil && !auth.Disabled {
 		header = map[string][]string{}
 		header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(auth.User+":"+auth.Password)))
 	}
@@ -146,59 +184,88 @@ func handleConnection(u url.URL, id string, con net.Conn, auth *AuthConfig) {
 	c, _, err := websocket.DefaultDialer.Dial(u.String(), header)
 	if err != nil {
 		log.Printf(id+": dial: %v", err)
+		con.Close()
 		return
 	}
 
-	defer c.Close()
+	// closing one side closes the other: once
+	var closeOnce sync.Once
+	closeAll := func() {
+		closeOnce.Do(func() {
+			c.Close()
+			con.Close()
+		})
+	}
+	defer closeAll()
 
-	go func() {
-		var read = func() (msg []byte, err error) {
-			defer func() {
-				if r := recover(); r != nil {
-					switch t := r.(type) {
-					case string:
-						if t == "repeated read on failed websocket connection" {
-							err = nil
-						} else {
-							err = errors.New(t)
-						}
-					case error:
-						err = t
-					default:
-						err = fmt.Errorf("%v", t)
+	stop := make(chan struct{})
+	defer close(stop)
+
+	if keepAlive > 0 {
+		// the server's pong (gorilla answers a ping by itself) — or any
+		// message — says the connection is alive; none for 3 intervals: a
+		// connection dead in silence, closed, so that the local client
+		// knows instead of waiting
+		alive := func() { _ = c.SetReadDeadline(time.Now().Add(3 * keepAlive)) }
+		alive()
+		c.SetPongHandler(func(string) error { alive(); return nil })
+
+		go func() {
+			ticker := time.NewTicker(keepAlive)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-stop:
+					return
+				case <-ticker.C:
+					// WriteControl may be called while io.Copy writes
+					if err := c.WriteControl(websocket.PingMessage, nil, time.Now().Add(writeWait)); err != nil {
+						log.Printf("%s: keep alive: %v", id, err)
+						closeAll()
+						return
 					}
 				}
-			}()
-			for t := websocket.TextMessage; err == nil && t != websocket.BinaryMessage; {
-				t, msg, err = c.ReadMessage()
-				if t == websocket.TextMessage {
-					// is a log message
-					log.Print(id + ": REMOTE MESSAGE: " + string(msg))
-				}
 			}
-			return
-		}
-		for {
-			message, err := read()
-			if err != nil {
-				if !strings.HasSuffix(err.Error(), "use of closed network connection") {
-					log.Printf(id+": read_message: %v", err)
-				}
-				con.Close()
-				return
-			} else {
-				if _, err := con.Write(message); err != nil {
-					log.Printf(id+": write_message: %v", err)
-					return
-				}
-			}
-		}
-	}()
+		}()
+
+		go readLoop(id, c, con, closeAll, alive)
+	} else {
+		go readLoop(id, c, con, closeAll, func() {})
+	}
 
 	defer func() {
 		log.Printf("%s: %s: done", id, con.RemoteAddr().String())
 	}()
 	io.Copy(&wsw{c: c}, con)
+}
+
+// readLoop writes to the local connection what the server sends — its text
+// messages are its log, logged —, until either side fails: then both are
+// closed.
+func readLoop(id string, c *websocket.Conn, con net.Conn, closeAll func(), alive func()) {
+	defer closeAll()
+	for {
+		t, msg, err := c.ReadMessage()
+		if err != nil {
+			if !websocket.IsCloseError(err, websocket.CloseNormalClosure) &&
+				!strings.HasSuffix(err.Error(), "use of closed network connection") {
+				log.Printf(id+": read_message: %v", err)
+			}
+			return
+		}
+		alive()
+		switch t {
+		case websocket.TextMessage:
+			log.Print(id + ": REMOTE MESSAGE: " + string(msg))
+		case websocket.BinaryMessage:
+			if _, err := con.Write(msg); err != nil {
+				if !strings.HasSuffix(err.Error(), "use of closed network connection") {
+					log.Printf(id+": write_message: %v", err)
+				}
+				return
+			}
+		}
+	}
 }
 
 type wsw struct {
