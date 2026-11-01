@@ -61,7 +61,12 @@ func main() {
 
 	if l := len(args); l == 0 || args[0] == "server" {
 		if readConfig(); err == nil {
-			err = runServer(fs, &cfg.Server, nil)
+			// its options (-addr) after the command
+			var serverArgs []string
+			if l > 0 {
+				serverArgs = args[1:]
+			}
+			err = runServer(fs, &cfg.Server, serverArgs)
 		}
 	} else if l > 0 {
 		switch args[0] {
