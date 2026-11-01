@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/moisespsena-go/httpdx/internal"
+	"github.com/moisespsena-dockers/httpdx/internal"
 )
 
 // message is the first message the proxy answers name with.

@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/moisespsena-go/httpdx/internal"
-	"github.com/moisespsena-go/httpdx/server"
+	"github.com/moisespsena-dockers/httpdx/internal"
+	"github.com/moisespsena-dockers/httpdx/server"
 )
 
 // echoServer is a TCP server that writes back what it reads.

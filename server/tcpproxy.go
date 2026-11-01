@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/moisespsena-go/httpdx/internal"
+	"github.com/moisespsena-dockers/httpdx/internal"
 )
 
 // BufferSize for coybuffer and websocket

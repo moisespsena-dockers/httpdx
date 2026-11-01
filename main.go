@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/moisespsena-go/httpdx/client"
-	"github.com/moisespsena-go/httpdx/server"
+	"github.com/moisespsena-dockers/httpdx/client"
+	"github.com/moisespsena-dockers/httpdx/server"
 	"gopkg.in/yaml.v3"
 )
 
@@ -284,7 +284,7 @@ func runAbout(parent *flag.FlagSet, args []string) (err error) {
 		"BuildTime":      buildTime,
 		"GoVars":         goVars,
 		"GoVarsKeys":     goVarsKeys,
-		"SiteUrl":        "https://github.com/moisespsena-go/httpdx",
+		"SiteUrl":        "https://github.com/moisespsena-dockers/httpdx",
 	})
 	if err == nil {
 		println()

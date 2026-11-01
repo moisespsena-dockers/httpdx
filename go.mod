@@ -1,4 +1,4 @@
-module github.com/moisespsena-go/httpdx
+module github.com/moisespsena-dockers/httpdx
 
 go 1.21.1
 

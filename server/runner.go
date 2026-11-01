@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/moisespsena-go/httpdx/internal"
+	"github.com/moisespsena-dockers/httpdx/internal"
 )
 
 func Serve(cfg *Config) (err error) {
@@ -252,7 +252,7 @@ const fallbackPage = `<!DOCTYPE html>
 working. Further configuration is required.</p>
 
 <p>For online documentation and support please refer to
-<a href="https://github.com/moisespsena-go/httpdx">HTTPDx</a>.<br/>
+<a href="https://github.com/moisespsena-dockers/httpdx">HTTPDx</a>.<br/>
 
 <p style="color:red">Warning: The requested page <code>%s</code> is unhandled.</strong></p>
 
