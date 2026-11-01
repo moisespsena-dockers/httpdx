@@ -1,14 +1,15 @@
 package server
 
 import (
+	"bufio"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
 	"path"
-	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -19,6 +20,11 @@ import (
 func Serve(cfg *Config) (err error) {
 	cfg.TCPSockets.Defaults()
 
+	keepAlive, err := KeepAliveOf(cfg.TCPSockets.KeepAlive)
+	if err != nil {
+		return err
+	}
+
 	var (
 		proxyHandler = New(
 			cfg.TCPSockets.Routes,
@@ -26,10 +32,11 @@ func Serve(cfg *Config) (err error) {
 			time.Second*time.Duration(cfg.TCPSockets.DialTimeout),
 			time.Second*time.Duration(cfg.TCPSockets.WriteTimeout),
 			cfg.TCPSockets.CompressionEnabled,
-		)
+		).WithKeepAlive(keepAlive)
 		proxies     []string
 		rootHandler http.Handler
 	)
+	log.Printf("Keep alive: %v", keepAlive)
 
 	http.Handle(internal.ProxyPath, http.HandlerFunc(proxyHandler.Proxy()))
 
@@ -116,17 +123,55 @@ func Serve(cfg *Config) (err error) {
 	return http.ListenAndServe(cfg.Addr, nil)
 }
 
+// Handlers serves a request by each handler in turn, until one answers.
 type Handlers []http.Handler
 
 func (h Handlers) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	f := reflect.ValueOf(w).Elem().FieldByName("wroteHeader")
+	// whether a handler wrote: by a writer of its own — reading the private
+	// field of net/http's (by reflection) panicked on any other writer
+	rw := &answeredWriter{ResponseWriter: w}
 	for _, h := range h {
-		if f.Bool() {
+		if rw.answered {
 			return
 		}
-		h.ServeHTTP(w, r)
+		h.ServeHTTP(rw, r)
 	}
 }
+
+// answeredWriter is a ResponseWriter that knows whether it was written.
+type answeredWriter struct {
+	http.ResponseWriter
+	answered bool
+}
+
+func (w *answeredWriter) WriteHeader(code int) {
+	w.answered = true
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *answeredWriter) Write(p []byte) (int, error) {
+	w.answered = true
+	return w.ResponseWriter.Write(p)
+}
+
+// Flush, Hijack, Unwrap: what the writer it wraps does (a reverse proxy
+// flushes, a websocket hijacks).
+func (w *answeredWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (w *answeredWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h, ok := w.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, fmt.Errorf("httpdx: %T is not a Hijacker", w.ResponseWriter)
+	}
+	w.answered = true
+	return h.Hijack()
+}
+
+func (w *answeredWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 func createReverseProxy(pth string, cfg *HttpConfig) (http.Handler, error) {
 	if cfg.Dir != "" {

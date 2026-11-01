@@ -1,0 +1,10 @@
+# an httpdx client of the compose tests: keep alive, a route with authentication
+client:
+  server_url: "http://front-keep:8080"
+  keep_alive: 1s
+  routes:
+    - name: secured
+      local_addr: :25000
+      auth:
+        user: tester
+        password: secret

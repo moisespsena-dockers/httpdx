@@ -42,3 +42,42 @@ func TestProxyErrors(t *testing.T) {
 		t.Errorf("upstream down: %q", got)
 	}
 }
+
+// The handlers of a request: the first that answers ends it — whatever the
+// writer (reading net/http's private field, it panicked on any other).
+func TestHandlers(t *testing.T) {
+	var second bool
+	h := Handlers{
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/a" {
+				w.WriteHeader(http.StatusTeapot)
+			}
+		}),
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			second = true
+			w.WriteHeader(http.StatusNotFound)
+		}),
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/a", nil))
+	if rec.Code != http.StatusTeapot || second {
+		t.Errorf("the first answered: %d, the second ran %v", rec.Code, second)
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/b", nil))
+	if rec.Code != http.StatusNotFound || !second {
+		t.Errorf("the first did not answer: %d, the second ran %v", rec.Code, second)
+	}
+}
+
+// keep_alive: empty the default, "0" none, a duration.
+func TestKeepAliveOf(t *testing.T) {
+	for in, want := range map[string]time.Duration{"": DefaultKeepAlive, "0": 0, "40s": 40 * time.Second} {
+		if got, err := KeepAliveOf(in); err != nil || got != want {
+			t.Errorf("%q: %v %v", in, got, err)
+		}
+	}
+	if _, err := KeepAliveOf("x"); err == nil {
+		t.Error("a bad duration accepted")
+	}
+}

@@ -175,3 +175,31 @@ Pass services as args `NAME:LOCAL_ADDR`.
 - `httpdx -config ./httpdx.yml client`, or
 - `httpdx client ssh:localhost:26000 other:localhost:26001`, or
 - `httpdx -config ./httpdx.yml client ssh:localhost:26000 other:localhost:26001` 
+
+## Keep alive
+
+A reverse proxy in front of the server (nginx: `proxy_read_timeout`, 60s by
+default) closes a websocket idle longer than its timeout: an open session
+without traffic — a `psql`, an `ssh` — dropped. Both ends ping an open
+connection, and close it when the other does not answer for 3 intervals:
+
+- `client.keep_alive` (default `25s`; `"0"`: never);
+- `server.tcp_sockets.keep_alive` (default `25s`; `"0"`: never) — it keeps a
+  client of before, without its own, alive too.
+
+## Tests
+
+```sh
+go test -race ./...   # the client and the server, in process
+make test-compose     # in containers (test/compose): see below
+```
+
+`make test-compose` builds the binaries here and runs, with Docker Compose,
+two servers (with and without keep alive), each behind a front that drops a
+connection idle 3s (`internal/testtools/front`, as a reverse proxy does), an
+echo server as the upstream, four clients — keep alive on the client only,
+on the server only, both with a route that asks for authentication, and
+neither (the control) — and `internal/testtools/check`: it idles a session
+through each client 7s (each must survive, the control must drop) and checks
+the server's answers to a route not registered, an upstream down and a wrong
+password. It exits with the check's status.

@@ -100,10 +100,15 @@ func idleKiller(t *testing.T, target string, idle time.Duration) string {
 // bridge is a route of the client to the echo server, through the server and
 // a proxy that closes what is idle for 300ms; keepAlive the client's.
 func bridge(t *testing.T, keepAlive time.Duration) net.Conn {
+	return bridgeWith(t, keepAlive, 0)
+}
+
+// bridgeWith is bridge with the server's keep alive too (0: none).
+func bridgeWith(t *testing.T, keepAlive, serverKeepAlive time.Duration) net.Conn {
 	t.Helper()
 	mux := http.NewServeMux()
 	h := server.New(map[string]*server.TCPSocketConfig{"echo": {Addr: echoServer(t)}},
-		2*time.Second, 2*time.Second, 2*time.Second, false)
+		2*time.Second, 2*time.Second, 2*time.Second, false).WithKeepAlive(serverKeepAlive)
 	mux.Handle(internal.ProxyPath, http.HandlerFunc(h.Proxy()))
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -157,6 +162,19 @@ func TestNoKeepAliveDrops(t *testing.T) {
 	time.Sleep(time.Second)
 	if got, err := echo(c, "b"); err == nil && got == "b" {
 		t.Fatal("an idle session without keep alive survived: the test proxy does not close idle connections")
+	}
+}
+
+// The server's keep alive alone keeps a client of before (without its own)
+// alive behind the proxy.
+func TestServerKeepAlive(t *testing.T) {
+	c := bridgeWith(t, 0, 100*time.Millisecond)
+	if got, err := echo(c, "a"); err != nil || got != "a" {
+		t.Fatalf("first: %q %v", got, err)
+	}
+	time.Sleep(time.Second)
+	if got, err := echo(c, "b"); err != nil || got != "b" {
+		t.Fatalf("after idle: %q %v — the session dropped", got, err)
 	}
 }
 

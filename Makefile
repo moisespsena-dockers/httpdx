@@ -43,3 +43,14 @@ docker_release: docker_push
 	$(DOCKER_CMD) push ${tag}:latest
 
 
+
+# The compose tests (test/compose): servers and clients in containers, behind a
+# front that drops idle connections, and a check of what survives. The
+# binaries are built here (no package installed in the image).
+test-compose:
+	CGO_ENABLED=0 go build -o test/compose/bin/httpdx .
+	CGO_ENABLED=0 go build -o test/compose/bin/ ./internal/testtools/...
+	$(DOCKER_CMD) compose -f test/compose/compose.yml up --build --abort-on-container-exit --exit-code-from check; \
+	code=$$?; $(DOCKER_CMD) compose -f test/compose/compose.yml down --remove-orphans >/dev/null 2>&1; exit $$code
+
+.PHONY: test-compose

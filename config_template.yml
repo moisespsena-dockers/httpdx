@@ -43,6 +43,12 @@ server:
 
 #    compression_enabled: false
 
+#    # how often the server pings an open connection, so that a reverse proxy
+#    # in front of it does not close an idle one (a client without its own
+#    # keep alive included), and a client gone without closing is found out
+#    # (no answer for 3 intervals). A Go duration; empty: 25s; "0": never.
+#    keep_alive: 25s
+
 #    # default authentication configuration
 #    auth:
 #      user: my-user

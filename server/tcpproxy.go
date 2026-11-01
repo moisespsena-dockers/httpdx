@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -16,6 +17,10 @@ import (
 // BufferSize for coybuffer and websocket
 const BufferSize = 256 * 1024
 
+// DefaultKeepAlive is how often the server pings a connection when the config
+// says nothing (TCPSocketsConfig.KeepAlive).
+const DefaultKeepAlive = 25 * time.Second
+
 // Handler handlers
 type Handler struct {
 	handlers          map[string]*TCPSocketConfig
@@ -23,6 +28,31 @@ type Handler struct {
 	dialTimeout       time.Duration
 	writeTimeout      time.Duration
 	enableCompression bool
+	// keepAlive is how often a connection is pinged; 0, never.
+	keepAlive time.Duration
+}
+
+// KeepAliveOf is the interval of s: DefaultKeepAlive when empty, 0 (none) when
+// "0".
+func KeepAliveOf(s string) (time.Duration, error) {
+	s = strings.TrimSpace(s)
+	switch s {
+	case "":
+		return DefaultKeepAlive, nil
+	case "0":
+		return 0, nil
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 0, fmt.Errorf("keep_alive: %w", err)
+	}
+	return d, nil
+}
+
+// WithKeepAlive sets how often a connection is pinged (0: never).
+func (h *Handler) WithKeepAlive(d time.Duration) *Handler {
+	h.keepAlive = d
+	return h
 }
 
 // New new handler
@@ -44,10 +74,12 @@ func New(
 	}
 
 	return &Handler{
-		handlers:     handlers,
-		upgrader:     upgrader,
-		dialTimeout:  dialTimeout,
-		writeTimeout: writeTimeout,
+		handlers:          handlers,
+		upgrader:          upgrader,
+		dialTimeout:       dialTimeout,
+		writeTimeout:      writeTimeout,
+		enableCompression: enableCompression,
+		keepAlive:         DefaultKeepAlive,
 	}
 }
 
@@ -110,9 +142,37 @@ func (h *Handler) Proxy() func(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		rwc := &wsConnRW{c: wc}
+		rwc := &wsConnRW{c: wc, writeTimeout: h.writeTimeout}
 
 		doneCh := make(chan bool)
+		stop := make(chan struct{})
+		defer close(stop)
+
+		if h.keepAlive > 0 {
+			// the client's pong (or any message) says it is alive; none for 3
+			// intervals: gone without closing — the connection closed
+			alive := func() { _ = wc.SetReadDeadline(time.Now().Add(3 * h.keepAlive)) }
+			alive()
+			rwc.alive = alive
+			wc.SetPongHandler(func(string) error { alive(); return nil })
+			go func() {
+				t := time.NewTicker(h.keepAlive)
+				defer t.Stop()
+				for {
+					select {
+					case <-stop:
+						return
+					case <-t.C:
+						// WriteControl may be called while io.Copy writes
+						if err := wc.WriteControl(websocket.PingMessage, nil, time.Now().Add(h.writeTimeout)); err != nil {
+							wc.Close()
+							s.Close()
+							return
+						}
+					}
+				}
+			}()
+		}
 
 		// websocket -> server
 		go func() {
@@ -137,6 +197,11 @@ func (h *Handler) Proxy() func(w http.ResponseWriter, r *http.Request) {
 type wsConnRW struct {
 	c *websocket.Conn
 	r io.Reader
+	// writeTimeout bounds a write (0: none): a client that stopped reading
+	// does not hold the connection forever
+	writeTimeout time.Duration
+	// alive is told of every message read (nil: none)
+	alive func()
 }
 
 func (w *wsConnRW) Read(p []byte) (n int, err error) {
@@ -165,6 +230,9 @@ start:
 		if err != nil {
 			return
 		}
+		if w.alive != nil {
+			w.alive()
+		}
 		if mt != websocket.BinaryMessage {
 			continue
 		}
@@ -174,6 +242,9 @@ start:
 }
 
 func (w *wsConnRW) Write(p []byte) (n int, err error) {
+	if w.writeTimeout > 0 {
+		_ = w.c.SetWriteDeadline(time.Now().Add(w.writeTimeout))
+	}
 	if err = w.c.WriteMessage(websocket.BinaryMessage, p); err == nil {
 		return len(p), nil
 	}

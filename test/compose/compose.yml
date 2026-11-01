@@ -1,0 +1,57 @@
+# The compose tests of httpdx: servers and clients in containers, behind a
+# front that drops idle connections (as the reverse proxy in front of a
+# server does), and a check of what survives. Run: make test-compose.
+#
+#   client-keep    keep alive 1s  -> front-none -> server-none (none)
+#   client-old     none           -> front-keep -> server-keep (1s)
+#   client-auth    keep alive 1s  -> front-keep -> server-keep, route with auth
+#   client-control none           -> front-none -> server-none: dropped
+#
+# The fronts drop a connection idle 3s; check idles the sessions 7s.
+
+x-httpdx: &httpdx
+  build: .
+  image: httpdx-compose-test
+  volumes:
+    - ./config:/config:ro
+
+services:
+  echo:
+    <<: *httpdx
+    command: ["echo", "-listen", ":7000"]
+
+  server-keep:
+    <<: *httpdx
+    command: ["httpdx", "-config", "/config/server-keep.yml", "server"]
+  server-none:
+    <<: *httpdx
+    command: ["httpdx", "-config", "/config/server-none.yml", "server"]
+
+  front-keep:
+    <<: *httpdx
+    command: ["front", "-listen", ":8080", "-target", "server-keep:80", "-idle", "3s"]
+  front-none:
+    <<: *httpdx
+    command: ["front", "-listen", ":8080", "-target", "server-none:80", "-idle", "3s"]
+
+  client-keep:
+    <<: *httpdx
+    command: ["httpdx", "-config", "/config/client-keep.yml", "client"]
+    depends_on: [front-none, server-none, echo]
+  client-old:
+    <<: *httpdx
+    command: ["httpdx", "-config", "/config/client-old.yml", "client"]
+    depends_on: [front-keep, server-keep, echo]
+  client-auth:
+    <<: *httpdx
+    command: ["httpdx", "-config", "/config/client-auth.yml", "client"]
+    depends_on: [front-keep, server-keep, echo]
+  client-control:
+    <<: *httpdx
+    command: ["httpdx", "-config", "/config/client-control.yml", "client"]
+    depends_on: [front-none, server-none, echo]
+
+  check:
+    <<: *httpdx
+    command: ["check", "-idle", "7s"]
+    depends_on: [client-keep, client-old, client-auth, client-control]

@@ -48,12 +48,19 @@ type AuthConfig struct {
 }
 
 type TCPSocketsConfig struct {
-	HandshakeTimeout   uint8                       `yaml:"handshake_timeout"`
-	DialTimeout        uint8                       `yaml:"dial_timeout"`
-	WriteTimeout       uint8                       `yaml:"write_timeout"`
-	CompressionEnabled bool                        `yaml:"compression_enabled"`
-	Auth               *AuthConfig                 `yaml:"auth"`
-	Routes             map[string]*TCPSocketConfig `yaml:"routes"`
+	HandshakeTimeout   uint8 `yaml:"handshake_timeout"`
+	DialTimeout        uint8 `yaml:"dial_timeout"`
+	WriteTimeout       uint8 `yaml:"write_timeout"`
+	CompressionEnabled bool  `yaml:"compression_enabled"`
+	// KeepAlive is how often the server pings an open connection (a Go
+	// duration: "25s"): a reverse proxy in front of the server closes a
+	// websocket idle longer than its timeout, a client of before (without its
+	// own keep alive) included; and a client gone without closing is found
+	// out — no answer for 3 intervals — and its connection closed. Empty:
+	// DefaultKeepAlive; "0": never.
+	KeepAlive string                      `yaml:"keep_alive"`
+	Auth      *AuthConfig                 `yaml:"auth"`
+	Routes    map[string]*TCPSocketConfig `yaml:"routes"`
 }
 
 func (c *TCPSocketsConfig) Defaults() {

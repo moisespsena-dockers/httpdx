@@ -1,0 +1,17 @@
+# the httpdx server of the compose tests, keep alive: "0"
+server:
+  addr: ":80"
+  not_found_disabled: true
+  tcp_sockets:
+    keep_alive: "0"
+    routes:
+      echo:
+        addr: echo:7000
+      # an upstream that is not there
+      down:
+        addr: nothere:1
+      secured:
+        addr: echo:7000
+        auth:
+          user: tester
+          password: secret

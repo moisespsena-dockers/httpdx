@@ -1,0 +1,8 @@
+# an httpdx client of the compose tests: without keep alive (as before the fix), through a server with
+client:
+  server_url: "http://front-keep:8080"
+  keep_alive: "0"
+  routes:
+    - name: echo
+      local_addr: :25000
+
