@@ -23,8 +23,9 @@ builds:
     flags:
       - -trimpath
     ldflags:
-      # main.buildTime: unix seconds (httpdx info prints it)
-      - -s -w -X main.buildTime={{ .Timestamp }}
+      # httpdx info prints them: main.buildTime in unix seconds, main.version
+      # the tag (the commit comes from git, embedded by go build)
+      - -s -w -X main.buildTime={{ .Timestamp }} -X main.version={{ .Version }}
 
 archives:
   - id: httpdx

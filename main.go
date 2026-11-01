@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"html/template"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"text/template"
 	"time"
 
 	"github.com/moisespsena-dockers/httpdx/client"
@@ -22,7 +22,10 @@ import (
 
 var (
 	configFile = filepath.Base(os.Args[0]) + ".yml"
-	buildTime  string
+	// buildTime (unix seconds) and version are set at build
+	// (-ldflags "-X main.buildTime=… -X main.version=…": GoReleaser does)
+	buildTime string
+	version   string
 )
 
 func main() {
@@ -215,9 +218,10 @@ func runCreateConfig(parent *flag.FlagSet, args []string) (err error) {
 func runAbout(parent *flag.FlagSet, args []string) (err error) {
 	var (
 		fs     = flag.NewFlagSet(parent.Name()+" info", flag.ContinueOnError)
-		format = "Commit Id: {{.CommitID}}\n" +
+		format = "Version: {{.Version}}\n" +
+			"Commit Id: {{.CommitID}}{{if .CommitModified}} (modified){{end}}\n" +
 			"Commit Time: {{.CommitTime}}\n" +
-			"Build Time: {{.BuildTime}}{{if .CommitModified}} (modified){{end}}\n" +
+			"Build Time: {{.BuildTime}}\n" +
 			"{{if .GoVarsKeys}}" +
 			"{{$goVars := .GoVars}}" +
 			"Go Variables:\n" +
@@ -256,7 +260,13 @@ func runAbout(parent *flag.FlagSet, args []string) (err error) {
 		return
 	}
 
+	ver := version
 	if info, ok := debug.ReadBuildInfo(); ok {
+		// a build of the module (go install …@v1.2.3, …@latest) has no VCS
+		// settings: its version says the commit (a pseudo-version) or the tag
+		if ver == "" && info.Main.Version != "(devel)" {
+			ver = info.Main.Version
+		}
 		for _, setting := range info.Settings {
 			switch setting.Key {
 			case "vcs":
@@ -265,7 +275,7 @@ func runAbout(parent *flag.FlagSet, args []string) (err error) {
 			case "vcs.revision":
 				commitID = setting.Value
 			case "vcs.modified":
-				modified = true
+				modified = setting.Value == "true"
 			default:
 				goVarsKeys = append(goVarsKeys, setting.Key)
 				goVars[setting.Key] = setting.Value
@@ -275,6 +285,13 @@ func runAbout(parent *flag.FlagSet, args []string) (err error) {
 
 	sort.Strings(goVarsKeys)
 
+	if commitID == "" {
+		commitID, commitTime = pseudoVersionCommit(ver)
+	}
+	if ver == "" {
+		ver = "(devel)"
+	}
+
 	if buildTime != "" {
 		if i, _ := strconv.Atoi(buildTime); i > 0 {
 			t := time.Unix(int64(i), 0)
@@ -283,6 +300,7 @@ func runAbout(parent *flag.FlagSet, args []string) (err error) {
 	}
 
 	err = t.Execute(os.Stdout, map[string]any{
+		"Version":        ver,
 		"CommitID":       commitID,
 		"CommitTime":     commitTime,
 		"CommitModified": modified,
@@ -317,4 +335,23 @@ func stringsLastIndexByte(s string, b byte) int {
 		}
 	}
 	return -1
+}
+
+// pseudoVersion is the end of a Go pseudo-version: the commit's time
+// (yyyymmddhhmmss, UTC) and the first 12 digits of its hash
+// (v0.0.0-20261101120529-5ff272874732).
+var pseudoVersion = regexp.MustCompile(`[.-](\d{14})-([0-9a-f]{12})(\+incompatible)?$`)
+
+// pseudoVersionCommit is the commit (its hash's first 12 digits) and time
+// (RFC 3339) of the pseudo-version v; "" for a tag.
+func pseudoVersionCommit(v string) (id, at string) {
+	m := pseudoVersion.FindStringSubmatch(v)
+	if m == nil {
+		return "", ""
+	}
+	t, err := time.Parse("20060102150405", m[1])
+	if err != nil {
+		return m[2], ""
+	}
+	return m[2], t.UTC().Format(time.RFC3339)
 }
