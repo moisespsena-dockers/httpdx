@@ -3,3 +3,5 @@ httpdx.yml
 dist/
 Makefile
 test/compose/bin/
+!.github/
+!.goreleaser.yaml

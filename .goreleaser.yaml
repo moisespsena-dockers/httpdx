@@ -1,0 +1,46 @@
+# GoReleaser: the release of httpdx for linux/amd64, run by the release
+# workflow (.github/workflows/release.yml) on a tag v*.
+#
+# Locally: goreleaser release --snapshot --clean --skip=publish
+version: 2
+
+project_name: httpdx
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: httpdx
+    main: .
+    binary: httpdx
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+    flags:
+      - -trimpath
+    ldflags:
+      # main.buildTime: unix seconds (httpdx info prints it)
+      - -s -w -X main.buildTime={{ .Timestamp }}
+
+archives:
+  - id: httpdx
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE
+      - config_template.yml
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^chore:"
