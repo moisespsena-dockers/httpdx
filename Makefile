@@ -1,4 +1,5 @@
 DOCKER_CMD ?= docker
+STATICCHECK_VERSION ?= 2026.2.2
 DOCKER_USERNAME ?= moisespsena
 APPLICATION_NAME ?= httpdx
 ADDR ?= ":10000"
@@ -54,3 +55,21 @@ test-compose:
 	code=$$?; $(DOCKER_CMD) compose -f test/compose/compose.yml down --remove-orphans >/dev/null 2>&1; exit $$code
 
 .PHONY: test-compose
+
+# lint: the code formatted (gofmt), go vet and staticcheck (STATICCHECK_VERSION,
+# run by go run: nothing to install).
+lint:
+	@unformatted=$$(gofmt -l .); if [ -n "$$unformatted" ]; then \
+		echo "not formatted (gofmt -w):"; echo "$$unformatted"; exit 1; fi
+	go vet ./...
+	go run honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION) ./...
+
+# test: the client and the server in process.
+test:
+	go test -race -count=1 ./...
+
+# verify: what a commit must pass — lint, the tests in process and in
+# containers (test-compose). The verify workflow runs it.
+verify: lint test test-compose
+
+.PHONY: lint test verify

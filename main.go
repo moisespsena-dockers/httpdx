@@ -74,7 +74,7 @@ func main() {
 		case "info":
 			err = runAbout(fs, args[1:])
 		default:
-			err = fmt.Errorf("Unknown command %q", args[0])
+			err = fmt.Errorf("unknown command %q", args[0])
 		}
 	}
 

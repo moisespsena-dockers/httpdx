@@ -1,0 +1,48 @@
+# verify: what every push to main (and every pull request) must pass —
+# make verify: lint (gofmt, go vet, staticcheck), the tests in process
+# (go test -race) and in containers (test/compose: the runner has Docker and
+# its compose plugin) —, and a snapshot build of the release config
+# (.goreleaser.yaml), nothing published.
+name: verify
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # the latest Go: staticcheck needs a recent one to build (go.mod keeps
+      # the minimum the code needs)
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: make verify
+        run: make verify
+
+  release-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --snapshot --clean --skip=publish

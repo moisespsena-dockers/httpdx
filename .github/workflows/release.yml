@@ -1,4 +1,4 @@
-# The release: on a tag v*, the tests, then GoReleaser (.goreleaser.yaml)
+# The release: on a tag v*, make verify, then GoReleaser (.goreleaser.yaml)
 # builds httpdx for linux/amd64 and publishes the GitHub release with the
 # archive and its checksum.
 name: release
@@ -21,10 +21,10 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: stable
 
-      - name: Test
-        run: go test -race ./...
+      - name: make verify
+        run: make verify
 
       - uses: goreleaser/goreleaser-action@v6
         with:
